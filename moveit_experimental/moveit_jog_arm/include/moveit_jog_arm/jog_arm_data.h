@@ -78,6 +78,9 @@ struct JogArmShared
 
   // Indicates no collision, etc, so outgoing commands can be sent
   bool ok_to_publish = false;
+
+  // The dimesions to control. In the command frame. [x, y, z, roll, pitch, yaw]
+  std::vector<bool> control_dimensions{true, true, true, true, true, true};
 };
 
 // ROS params to be read. See the yaml file in /config for a description of each.

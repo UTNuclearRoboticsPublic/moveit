@@ -10,12 +10,21 @@ endif()
 find_package(catkin REQUIRED COMPONENTS
   control_msgs
   geometry_msgs
+  message_generation
   moveit_ros_planning_interface
   rosparam_shortcuts
   tf2_ros
 )
 find_package(Eigen3 REQUIRED)
 
+add_service_files(
+  FILES
+  ChangeControlDimensions.srv
+)
+
+generate_messages(
+  DEPENDENCIES
+)
 
 catkin_package(
   INCLUDE_DIRS
@@ -24,6 +33,7 @@ catkin_package(
   CATKIN_DEPENDS
     control_msgs
     geometry_msgs
+    message_runtime
     moveit_ros_planning_interface
     rosparam_shortcuts
     tf2_ros

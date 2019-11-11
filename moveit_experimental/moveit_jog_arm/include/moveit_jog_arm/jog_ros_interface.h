@@ -50,6 +50,7 @@
 #include <rosparam_shortcuts/rosparam_shortcuts.h>
 #include <sensor_msgs/Joy.h>
 #include <std_msgs/Float64MultiArray.h>
+#include <moveit_jog_arm/ChangeControlDimensions.h>
 
 namespace moveit_jog_arm
 {
@@ -67,6 +68,7 @@ private:
   void deltaCartesianCmdCB(const geometry_msgs::TwistStampedConstPtr& msg);
   void deltaJointCmdCB(const control_msgs::JointJogConstPtr& msg);
   void jointsCB(const sensor_msgs::JointStateConstPtr& msg);
+  bool changeControlDimensions(moveit_jog_arm::ChangeControlDimensions::Request& req, moveit_jog_arm::ChangeControlDimensions::Response& res);
 
   bool readParameters(ros::NodeHandle& n);
 

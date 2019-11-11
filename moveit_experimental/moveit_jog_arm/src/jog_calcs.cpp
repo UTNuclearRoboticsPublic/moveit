@@ -262,7 +262,18 @@ bool JogCalcs::cartesianJogCalcs(geometry_msgs::TwistStamped& cmd, JogArmShared&
     return false;
   }
 
+  // Set uncontrolled dimension's commands to 0
   geometry_msgs::Vector3 lin_vector = cmd.twist.linear;
+  geometry_msgs::Vector3 rot_vector = cmd.twist.angular;
+  pthread_mutex_lock(&mutex);
+  if(!shared_variables.control_dimensions[0]) lin_vector.x = 0;
+  if(!shared_variables.control_dimensions[1]) lin_vector.y = 0;
+  if(!shared_variables.control_dimensions[2]) lin_vector.z = 0;
+  if(!shared_variables.control_dimensions[3]) rot_vector.x = 0;
+  if(!shared_variables.control_dimensions[4]) rot_vector.y = 0;
+  if(!shared_variables.control_dimensions[5]) rot_vector.z = 0;
+  pthread_mutex_unlock(&mutex);
+
   try
   {
     tf2::doTransform(lin_vector, lin_vector, command_frame_to_planning_frame);
@@ -273,7 +284,6 @@ bool JogCalcs::cartesianJogCalcs(geometry_msgs::TwistStamped& cmd, JogArmShared&
     return false;
   }
 
-  geometry_msgs::Vector3 rot_vector = cmd.twist.angular;
   try
   {
     tf2::doTransform(rot_vector, rot_vector, command_frame_to_planning_frame);
