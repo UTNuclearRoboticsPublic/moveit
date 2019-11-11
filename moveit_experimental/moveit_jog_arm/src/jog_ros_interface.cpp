@@ -77,8 +77,9 @@ JogROSInterface::JogROSInterface()
       nh.subscribe(ros_parameters_.joint_command_in_topic, 1, &JogROSInterface::deltaJointCmdCB, this);
 
   // ROS Server for changing the control dimensions
-  ros::ServiceServer dims_server = nh.advertiseService(nh.getNamespace() + "/" + ros::this_node::getName() + 
-      "/change_control_dimensions", &JogROSInterface::changeControlDimensions, this);
+  ros::ServiceServer dims_server =
+      nh.advertiseService(nh.getNamespace() + "/" + ros::this_node::getName() + "/change_control_dimensions",
+                          &JogROSInterface::changeControlDimensions, this);
 
   // Publish freshly-calculated joints to the robot.
   // Put the outgoing msg in the right format (trajectory_msgs/JointTrajectory or std_msgs/Float64MultiArray).
@@ -239,17 +240,21 @@ bool JogROSInterface::changeControlDimensions(moveit_jog_arm::ChangeControlDimen
                                               moveit_jog_arm::ChangeControlDimensions::Response& res)
 {
   pthread_mutex_lock(&shared_variables_mutex_);
-  if(req.dimensions_to_control.empty()) shared_variables_.control_dimensions.assign(6, true);
-  else if(req.dimensions_to_control.size() != 6)
+  if (req.dimensions_to_control.empty())
   {
-    ROS_ERROR_STREAM_NAMED(LOGNAME, "Dimensions to control must be size 6, was passed size: " << req.dimensions_to_control.size());
+    shared_variables_.control_dimensions.assign(6, true);
+  }
+  else if (req.dimensions_to_control.size() != 6)
+  {
+    ROS_ERROR_STREAM_NAMED(
+        LOGNAME, "Dimensions to control must be size 6, was passed size: " << req.dimensions_to_control.size());
     pthread_mutex_unlock(&shared_variables_mutex_);
     res.success = false;
     return false;
   }
   else
   {
-    for(size_t i=0; i<req.dimensions_to_control.size(); ++i)
+    for (size_t i = 0; i < req.dimensions_to_control.size(); ++i)
     {
       shared_variables_.control_dimensions[i] = req.dimensions_to_control[i];
     }
