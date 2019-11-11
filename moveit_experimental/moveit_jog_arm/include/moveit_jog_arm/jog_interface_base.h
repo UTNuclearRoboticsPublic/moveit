@@ -57,6 +57,9 @@ class JogInterfaceBase
 public:
   void jointsCB(const sensor_msgs::JointStateConstPtr& msg);
 
+  // Service callback for changing jogging dimensions
+  bool changeControlDimensions(moveit_jog_arm::ChangeControlDimensions::Request& req, moveit_jog_arm::ChangeControlDimensions::Response& res);
+
   // Jogging calculation thread
   bool startJogCalcThread();
   bool stopJogCalcThread();

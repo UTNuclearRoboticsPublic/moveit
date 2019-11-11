@@ -82,6 +82,9 @@ struct JogArmShared
 
   // The transform from the MoveIt planning frame to robot_link_command_frame
   Eigen::Isometry3d tf_moveit_to_cmd_frame;
+  
+  // The dimesions to control. In the command frame. [x, y, z, roll, pitch, yaw]
+  std::vector<bool> control_dimensions{true, true, true, true, true, true};
 };
 
 // ROS params to be read. See the yaml file in /config for a description of each.
