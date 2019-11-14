@@ -240,25 +240,12 @@ bool JogROSInterface::changeControlDimensions(moveit_jog_arm::ChangeControlDimen
                                               moveit_jog_arm::ChangeControlDimensions::Response& res)
 {
   pthread_mutex_lock(&shared_variables_mutex_);
-  if (req.dimensions_to_control.empty())
-  {
-    shared_variables_.control_dimensions.assign(6, true);
-  }
-  else if (req.dimensions_to_control.size() != 6)
-  {
-    ROS_ERROR_STREAM_NAMED(
-        LOGNAME, "Dimensions to control must be size 6, was passed size: " << req.dimensions_to_control.size());
-    pthread_mutex_unlock(&shared_variables_mutex_);
-    res.success = false;
-    return false;
-  }
-  else
-  {
-    for (size_t i = 0; i < req.dimensions_to_control.size(); ++i)
-    {
-      shared_variables_.control_dimensions[i] = req.dimensions_to_control[i];
-    }
-  }
+  shared_variables_.control_dimensions[0] = req.control_x_translation;
+  shared_variables_.control_dimensions[1] = req.control_y_translation;
+  shared_variables_.control_dimensions[2] = req.control_z_translation;
+  shared_variables_.control_dimensions[3] = req.control_x_rotation;
+  shared_variables_.control_dimensions[4] = req.control_y_rotation;
+  shared_variables_.control_dimensions[5] = req.control_z_rotation;
   pthread_mutex_unlock(&shared_variables_mutex_);
 
   res.success = true;
