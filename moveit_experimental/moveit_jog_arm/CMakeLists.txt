@@ -55,7 +55,7 @@ add_executable(jog_server
   src/low_pass_filter.cpp
 )
 
-add_dependencies(jog_server ${catkin_EXPORTED_TARGETS})
+add_dependencies(jog_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(jog_server ${catkin_LIBRARIES} ${Eigen_LIBRARIES})
 
 add_executable(spacenav_to_twist
