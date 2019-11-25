@@ -236,8 +236,8 @@ void JogROSInterface::jointsCB(const sensor_msgs::JointStateConstPtr& msg)
   pthread_mutex_unlock(&shared_variables_mutex_);
 }
 
-bool JogROSInterface::changeControlDimensions(moveit_jog_arm::ChangeControlDimensions::Request& req,
-                                              moveit_jog_arm::ChangeControlDimensions::Response& res)
+bool JogROSInterface::changeControlDimensions(moveit_msgs::ChangeControlDimensions::Request& req,
+                                              moveit_msgs::ChangeControlDimensions::Response& res)
 {
   pthread_mutex_lock(&shared_variables_mutex_);
   shared_variables_.control_dimensions[0] = req.control_x_translation;
