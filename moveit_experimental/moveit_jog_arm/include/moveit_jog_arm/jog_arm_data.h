@@ -38,6 +38,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <control_msgs/JointJog.h>
 #include <Eigen/Geometry>
 #include <geometry_msgs/TwistStamped.h>
@@ -84,7 +85,7 @@ struct JogArmShared
   Eigen::Isometry3d tf_moveit_to_cmd_frame;
   
   // The dimesions to control. In the command frame. [x, y, z, roll, pitch, yaw]
-  std::vector<bool> control_dimensions{ true, true, true, true, true, true };
+  std::array<std::atomic_bool, 6> control_dimensions;
 };
 
 // ROS params to be read. See the yaml file in /config for a description of each.
