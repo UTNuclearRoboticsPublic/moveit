@@ -38,18 +38,12 @@
 
 #pragma once
 
-// System
 #include <atomic>
-
-// ROS
-#include <moveit/planning_scene_monitor/planning_scene_monitor.h>
-#include <moveit/robot_model_loader/robot_model_loader.h>
-#include <std_msgs/Int8.h>
-
-// moveit_jog_arm
 #include "jog_arm_data.h"
 #include "low_pass_filter.h"
-#include "status_codes.h"
+#include <moveit/planning_scene_monitor/planning_scene_monitor.h>
+#include <moveit/robot_model_loader/robot_model_loader.h>
+#include <std_msgs/Bool.h>
 
 namespace moveit_jog_arm
 {
@@ -58,130 +52,87 @@ class JogCalcs
 public:
   JogCalcs(const JogArmParameters& parameters, const robot_model_loader::RobotModelLoaderPtr& model_loader_ptr);
 
-  void startMainLoop(JogArmShared& shared_variables);
+  void startMainLoop(JogArmShared& shared_variables, std::mutex& mutex);
 
-  /** \brief Check if the robot state is being updated and the end effector transform is known
-   *  @return true if initialized properly
-   */
-  bool isInitialized();
+  void stopMainLoop();
 
 protected:
   ros::NodeHandle nh_;
 
-  // Flag that robot state is up to date, end effector transform is known
-  std::atomic<bool> is_initialized_;
+  // Loop termination flag
+  std::atomic<bool> stop_requested_;
 
-  /** \brief Do jogging calculations for Cartesian twist commands. */
-  bool cartesianJogCalcs(geometry_msgs::TwistStamped& cmd, JogArmShared& shared_variables);
+  sensor_msgs::JointState incoming_joints_;
 
-  /** \brief Do jogging calculations for direct commands to a joint. */
+  bool cartesianJogCalcs(geometry_msgs::TwistStamped& cmd, JogArmShared& shared_variables, std::mutex& mutex);
+
   bool jointJogCalcs(const control_msgs::JointJog& cmd, JogArmShared& shared_variables);
 
-  /** \brief Update the stashed status so it can be retrieved asynchronously */
-  void updateCachedStatus(JogArmShared& shared_variables);
+  // Parse the incoming joint msg for the joints of our MoveGroup
+  bool updateJoints();
 
-  /** \brief Parse the incoming joint msg for the joints of our MoveGroup */
-  bool updateJoints(JogArmShared& shared_variables);
-
-  /** \brief If incoming velocity commands are from a unitless joystick, scale them to physical units.
-   * Also, multiply by timestep to calculate a position change.
-   */
   Eigen::VectorXd scaleCartesianCommand(const geometry_msgs::TwistStamped& command) const;
 
-  /** \brief If incoming velocity commands are from a unitless joystick, scale them to physical units.
-   * Also, multiply by timestep to calculate a position change.
-   */
   Eigen::VectorXd scaleJointCommand(const control_msgs::JointJog& command) const;
 
   bool addJointIncrements(sensor_msgs::JointState& output, const Eigen::VectorXd& increments) const;
 
-  /** \brief Suddenly halt for a joint limit or other critical issue.
-   * Is handled differently for position vs. velocity control.
-   */
+  // Scale the delta theta to match joint velocity limits. Uniform scaling
+  void enforceJointVelocityLimits(Eigen::VectorXd& calculated_joint_velocity);
+
+  // Reset the data stored in low-pass filters so the trajectory won't jump when jogging is resumed.
+  void resetVelocityFilters();
+
+  // Suddenly halt for a joint limit or other critical issue.
+  // Is handled differently for position vs. velocity control.
   void suddenHalt(trajectory_msgs::JointTrajectory& joint_traj);
-  void suddenHalt(Eigen::ArrayXd& delta_theta);
 
-  /** \brief Publish the status of the jogger to a ROS topic */
-  void publishStatus() const;
+  void publishWarning(bool active) const;
 
-  /** \brief  Scale the delta theta to match joint velocity/acceleration limits */
-  void enforceSRDFAccelVelLimits(Eigen::ArrayXd& delta_theta);
+  bool checkIfJointsWithinURDFBounds(trajectory_msgs::JointTrajectory_<std::allocator<void>>& new_joint_traj);
 
-  /** \brief Avoid overshooting joint limits */
-  bool enforceSRDFPositionLimits(trajectory_msgs::JointTrajectory& new_joint_traj);
+  // Possibly calculate a velocity scaling factor, due to proximity of
+  // singularity and direction of motion
+  double decelerateForSingularity(const Eigen::VectorXd& commanded_velocity,
+                                  const Eigen::JacobiSVD<Eigen::MatrixXd>& svd);
 
-  /** \brief Possibly calculate a velocity scaling factor, due to proximity of
-   * singularity and direction of motion
-   */
-  double velocityScalingFactorForSingularity(const Eigen::VectorXd& commanded_velocity,
-                                             const Eigen::JacobiSVD<Eigen::MatrixXd>& svd,
-                                             const Eigen::MatrixXd& jacobian, const Eigen::MatrixXd& pseudo_inverse);
+  // Apply velocity scaling for proximity of collisions and singularities
+  bool applyVelocityScaling(JogArmShared& shared_variables, std::mutex& mutex,
+                            trajectory_msgs::JointTrajectory& new_joint_traj, const Eigen::VectorXd& delta_theta,
+                            double singularity_scale);
 
-  /**
-   * Slow motion down if close to singularity or collision.
-   * @param shared_variables data shared between threads, tells how close we are to collision
-   * @param delta_theta motion command, used in calculating new_joint_tray
-   * @param singularity_scale tells how close we are to a singularity
-   */
-  void applyVelocityScaling(JogArmShared& shared_variables, Eigen::ArrayXd& delta_theta, double singularity_scale);
+  trajectory_msgs::JointTrajectory composeOutgoingMessage(sensor_msgs::JointState& joint_state) const;
 
-  /** \brief Compose the outgoing JointTrajectory message */
-  trajectory_msgs::JointTrajectory composeJointTrajMessage(sensor_msgs::JointState& joint_state) const;
+  void lowPassFilterVelocities(const Eigen::VectorXd& joint_vel);
 
-  /** \brief Smooth position commands with a lowpass filter */
-  void lowPassFilterPositions(sensor_msgs::JointState& joint_state);
+  void lowPassFilterPositions();
 
-  /** \brief Convert an incremental position command to joint velocity message */
-  void calculateJointVelocities(sensor_msgs::JointState& joint_state, const Eigen::ArrayXd& delta_theta);
-
-  /** \brief Convert joint deltas to an outgoing JointTrajectory command.
-    * This happens for joint commands and Cartesian commands.
-    */
-  bool convertDeltasToOutgoingCmd();
-
-  /** \brief Gazebo simulations have very strict message timestamp requirements.
-   * Satisfy Gazebo by stuffing multiple messages into one.
-   */
   void insertRedundantPointsIntoTrajectory(trajectory_msgs::JointTrajectory& trajectory, int count) const;
 
-  /**
-   * Remove the Jacobian row and the delta-x element of one Cartesian dimension, to take advantage of task redundancy
-   *
-   * @param matrix The Jacobian matrix.
-   * @param delta_x Vector of Cartesian delta commands, should be the same size as matrix.rows()
-   * @param row_to_remove Dimension that will be allowed to drift, e.g. row_to_remove = 2 allows z-translation drift.
-   */
-  void removeDimension(Eigen::MatrixXd& matrix, Eigen::VectorXd& delta_x, unsigned int row_to_remove);
+  const robot_state::JointModelGroup* joint_model_group_;
 
-  const moveit::core::JointModelGroup* joint_model_group_;
+  robot_state::RobotStatePtr kinematic_state_;
 
-  moveit::core::RobotStatePtr kinematic_state_;
-
-  // incoming_joint_state_ is the incoming message. It may contain passive joints or other joints we don't care about.
-  // internal_joint_state_ is used in jog calculations. It shouldn't be relied on to be accurate.
-  // original_joint_state_ is the same as incoming_joint_state_ except it only contains the joints jog_arm acts on.
-  sensor_msgs::JointState incoming_joint_state_, internal_joint_state_, original_joint_state_;
+  sensor_msgs::JointState joint_state_, original_joint_state_;
   std::map<std::string, std::size_t> joint_state_name_map_;
   trajectory_msgs::JointTrajectory outgoing_command_;
 
+  std::vector<LowPassFilter> velocity_filters_;
   std::vector<LowPassFilter> position_filters_;
 
-  ros::Publisher status_pub_;
-
-  StatusCode status_ = NO_WARNING;
+  ros::Publisher warning_pub_;
 
   JogArmParameters parameters_;
 
-  // Use ArrayXd type to enable more coefficient-wise operations
-  Eigen::ArrayXd delta_theta_;
-  Eigen::ArrayXd prev_joint_velocity_;
+  // For jacobian calculations
+  Eigen::MatrixXd jacobian_, pseudo_inverse_, matrix_s_;
+  Eigen::JacobiSVD<Eigen::MatrixXd> svd_;
+  Eigen::VectorXd delta_theta_;
 
   Eigen::Isometry3d tf_moveit_to_cmd_frame_;
 
   const int gazebo_redundant_message_count_ = 30;
 
   uint num_joints_;
-
-  ros::Rate default_sleep_rate_;
 };
 }  // namespace moveit_jog_arm

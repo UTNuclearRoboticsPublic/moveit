@@ -36,10 +36,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#include "moveit_jog_arm/jog_cpp_interface.h"
-#include "moveit_jog_arm/status_codes.h"
-
-static const std::string LOGNAME = "cpp_interface_example";
+#include <moveit_jog_arm/jog_cpp_interface.h>
 
 /**
  * Instantiate the C++ jogging interface.
@@ -48,26 +45,10 @@ static const std::string LOGNAME = "cpp_interface_example";
  */
 int main(int argc, char** argv)
 {
-  ros::init(argc, argv, LOGNAME);
-
-  // Load the planning scene monitor
-  planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor;
-  planning_scene_monitor = std::make_shared<planning_scene_monitor::PlanningSceneMonitor>("robot_description");
-  if (!planning_scene_monitor->getPlanningScene())
-  {
-    ROS_ERROR_STREAM_NAMED(LOGNAME, "Error in setting up the PlanningSceneMonitor.");
-    exit(EXIT_FAILURE);
-  }
-
-  planning_scene_monitor->startSceneMonitor();
-  planning_scene_monitor->startWorldGeometryMonitor(
-      planning_scene_monitor::PlanningSceneMonitor::DEFAULT_COLLISION_OBJECT_TOPIC,
-      planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_WORLD_TOPIC,
-      false /* skip octomap monitor */);
-  planning_scene_monitor->startStateMonitor();
+  ros::init(argc, argv, moveit_jog_arm::LOGNAME);
 
   // Run the jogging C++ interface in a new thread to ensure a constant outgoing message rate.
-  moveit_jog_arm::JogCppInterface jog_interface(planning_scene_monitor);
+  moveit_jog_arm::JogCppApi jog_interface;
   std::thread jogging_thread([&]() { jog_interface.startMainLoop(); });
 
   // Make a Cartesian velocity message
@@ -110,12 +91,7 @@ int main(int argc, char** argv)
 
   // Retrieve the current joint state from the jogger
   sensor_msgs::JointState current_joint_state = jog_interface.getJointState();
-  ROS_INFO_STREAM_NAMED(LOGNAME, "Current joint state:");
-  ROS_INFO_STREAM_NAMED(LOGNAME, current_joint_state);
-
-  // Retrieve the current status of the jogger
-  moveit_jog_arm::StatusCode status = jog_interface.getJoggerStatus();
-  ROS_INFO_STREAM_NAMED(LOGNAME, "Jogger status:\n" << status);
+  ROS_INFO_STREAM(current_joint_state);
 
   jog_interface.stopMainLoop();
   jogging_thread.join();

@@ -42,7 +42,7 @@
 #include "jog_calcs.h"
 #include "low_pass_filter.h"
 #include <moveit/robot_state/robot_state.h>
-#include <moveit_msgs/ChangeDriftDimensions.h>
+#include <moveit_msgs/ChangeControlDimensions.h>
 #include <rosparam_shortcuts/rosparam_shortcuts.h>
 #include <sensor_msgs/Joy.h>
 #include <std_msgs/Float64MultiArray.h>
@@ -56,45 +56,30 @@ namespace moveit_jog_arm
 class JogInterfaceBase
 {
 public:
-  JogInterfaceBase();
-
-  /** \brief Update the joints of the robot */
   void jointsCB(const sensor_msgs::JointStateConstPtr& msg);
 
-  /**
-   * Allow drift in certain dimensions. For example, may allow the wrist to rotate freely.
-   * This can help avoid singularities.
-   *
-   * @param request the service request
-   * @param response the service response
-   * @return true if the adjustment was made
-   */
-  bool changeDriftDimensions(moveit_msgs::ChangeDriftDimensions::Request& req,
-                             moveit_msgs::ChangeDriftDimensions::Response& res);
+  // Service callback for changing jogging dimensions
+  bool changeControlDimensions(moveit_msgs::ChangeControlDimensions::Request& req, moveit_msgs::ChangeControlDimensions::Response& res);
 
-  /** \brief Start the main calculation thread */
+  // Jogging calculation thread
   bool startJogCalcThread();
-
-  /** \brief Stop the main calculation thread */
   bool stopJogCalcThread();
 
-  /** \brief Start collision checking */
+  // Collision checking thread
   bool startCollisionCheckThread();
-
-  /** \brief Stop collision checking */
   bool stopCollisionCheckThread();
 
 protected:
   bool readParameters(ros::NodeHandle& n);
 
-  // Pointer to the collision environment
-  planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor_;
+  robot_model_loader::RobotModelLoaderPtr model_loader_ptr_;
 
   // Store the parameters that were read from ROS server
   JogArmParameters ros_parameters_;
 
   // Share data between threads
   JogArmShared shared_variables_;
+  std::mutex shared_variables_mutex_;
 
   // Jog calcs
   std::unique_ptr<JogCalcs> jog_calcs_;

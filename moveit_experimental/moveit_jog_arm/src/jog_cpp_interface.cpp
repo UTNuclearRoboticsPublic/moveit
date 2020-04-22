@@ -1,4 +1,9 @@
 /*******************************************************************************
+ *      Title     : jog_cpp_interface.cpp
+ *      Project   : moveit_jog_arm
+ *      Created   : 11/20/2019
+ *      Author    : Andy Zelenak
+ *
  * BSD 3-Clause License
  *
  * Copyright (c) 2019, Los Alamos National Security, LLC
@@ -31,37 +36,29 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-/*      Title     : jog_cpp_interface.cpp
- *      Project   : moveit_jog_arm
- *      Created   : 11/20/2019
- *      Author    : Andy Zelenak
- */
-
 #include "moveit_jog_arm/jog_cpp_interface.h"
-
-static const std::string LOGNAME = "jog_cpp_interface";
 
 namespace moveit_jog_arm
 {
-JogCppInterface::JogCppInterface(const planning_scene_monitor::PlanningSceneMonitorPtr& planning_scene_monitor)
+JogCppApi::JogCppApi()
 {
-  planning_scene_monitor_ = planning_scene_monitor;
-
   // Read ROS parameters, typically from YAML file
   if (!readParameters(nh_))
     exit(EXIT_FAILURE);
+
+  // Load the robot model. This is used by the worker threads.
+  model_loader_ptr_ = std::shared_ptr<robot_model_loader::RobotModelLoader>(new robot_model_loader::RobotModelLoader);
 }
 
-JogCppInterface::~JogCppInterface()
+JogCppApi::~JogCppApi()
 {
   stopMainLoop();
 }
 
-void JogCppInterface::startMainLoop()
+void JogCppApi::startMainLoop()
 {
   // Reset loop termination flag
-  shared_variables_.stop_requested = false;
-  shared_variables_.paused = false;
+  stop_requested_ = false;
 
   // Crunch the numbers in this thread
   startJogCalcThread();
@@ -92,72 +89,72 @@ void JogCppInterface::startMainLoop()
 
   ros::Rate main_rate(1. / ros_parameters_.publish_period);
 
-  while (ros::ok() && !shared_variables_.stop_requested)
+  while (ros::ok() && !stop_requested_)
   {
     ros::spinOnce();
 
-    if (!shared_variables_.paused)
+    shared_variables_mutex_.lock();
+    trajectory_msgs::JointTrajectory outgoing_command = shared_variables_.outgoing_command;
+
+    // Check if incoming commands are stale
+    if ((ros::Time::now() - shared_variables_.latest_nonzero_cmd_stamp) <
+        ros::Duration(ros_parameters_.incoming_command_timeout))
     {
-      shared_variables_.lock();
-      trajectory_msgs::JointTrajectory outgoing_command = shared_variables_.outgoing_command;
-
-      // Check if incoming commands are stale
-      shared_variables_.command_is_stale = (ros::Time::now() - shared_variables_.latest_nonzero_cmd_stamp) >=
-                                           ros::Duration(ros_parameters_.incoming_command_timeout);
-
-      // Publish the most recent trajectory, unless the jogging calculation thread tells not to
-      if (shared_variables_.ok_to_publish)
-      {
-        // Put the outgoing msg in the right format
-        // (trajectory_msgs/JointTrajectory or std_msgs/Float64MultiArray).
-        if (ros_parameters_.command_out_type == "trajectory_msgs/JointTrajectory")
-        {
-          outgoing_command.header.stamp = ros::Time::now();
-          outgoing_cmd_pub.publish(outgoing_command);
-        }
-        else if (ros_parameters_.command_out_type == "std_msgs/Float64MultiArray")
-        {
-          std_msgs::Float64MultiArray joints;
-          if (ros_parameters_.publish_joint_positions)
-            joints.data = outgoing_command.points[0].positions;
-          else if (ros_parameters_.publish_joint_velocities)
-            joints.data = outgoing_command.points[0].velocities;
-          outgoing_cmd_pub.publish(joints);
-        }
-      }
-      else if (shared_variables_.command_is_stale)
-      {
-        ROS_WARN_STREAM_THROTTLE_NAMED(10, LOGNAME, "Stale command. "
-                                                    "Try a larger 'incoming_command_timeout' parameter?");
-      }
-      else
-      {
-        ROS_DEBUG_STREAM_THROTTLE_NAMED(10, LOGNAME, "All-zero command. Doing nothing.");
-      }
-
-      shared_variables_.unlock();
+      shared_variables_.command_is_stale = false;
     }
+    else
+    {
+      shared_variables_.command_is_stale = true;
+    }
+
+    // Publish the most recent trajectory, unless the jogging calculation thread tells not to
+    if (shared_variables_.ok_to_publish)
+    {
+      // Put the outgoing msg in the right format
+      // (trajectory_msgs/JointTrajectory or std_msgs/Float64MultiArray).
+      if (ros_parameters_.command_out_type == "trajectory_msgs/JointTrajectory")
+      {
+        outgoing_command.header.stamp = ros::Time::now();
+        outgoing_cmd_pub.publish(outgoing_command);
+      }
+      else if (ros_parameters_.command_out_type == "std_msgs/Float64MultiArray")
+      {
+        std_msgs::Float64MultiArray joints;
+        if (ros_parameters_.publish_joint_positions)
+          joints.data = outgoing_command.points[0].positions;
+        else if (ros_parameters_.publish_joint_velocities)
+          joints.data = outgoing_command.points[0].velocities;
+        outgoing_cmd_pub.publish(joints);
+      }
+    }
+    else if (shared_variables_.command_is_stale)
+    {
+      ROS_WARN_STREAM_THROTTLE_NAMED(10, LOGNAME, "Stale command. "
+                                                  "Try a larger 'incoming_command_timeout' parameter?");
+    }
+    else
+    {
+      ROS_DEBUG_STREAM_THROTTLE_NAMED(10, LOGNAME, "All-zero command. Doing nothing.");
+    }
+
+    shared_variables_mutex_.unlock();
 
     main_rate.sleep();
   }
 
+  ROS_ERROR("Stopping main loop");
   stopJogCalcThread();
   stopCollisionCheckThread();
 }
 
-void JogCppInterface::stopMainLoop()
+void JogCppApi::stopMainLoop()
 {
-  shared_variables_.stop_requested = true;
+  stop_requested_ = true;
 }
 
-void JogCppInterface::setPaused(bool paused)
+void JogCppApi::provideTwistStampedCommand(const geometry_msgs::TwistStamped& velocity_command)
 {
-  shared_variables_.paused = paused;
-}
-
-void JogCppInterface::provideTwistStampedCommand(const geometry_msgs::TwistStamped& velocity_command)
-{
-  shared_variables_.lock();
+  shared_variables_mutex_.lock();
 
   shared_variables_.command_deltas.twist = velocity_command.twist;
   shared_variables_.command_deltas.header = velocity_command.header;
@@ -169,23 +166,23 @@ void JogCppInterface::provideTwistStampedCommand(const geometry_msgs::TwistStamp
   }
 
   // Check if input is all zeros. Flag it if so to skip calculations/publication after num_outgoing_halt_msgs_to_publish
-  shared_variables_.have_nonzero_cartesian_cmd = shared_variables_.command_deltas.twist.linear.x != 0.0 ||
-                                                 shared_variables_.command_deltas.twist.linear.y != 0.0 ||
-                                                 shared_variables_.command_deltas.twist.linear.z != 0.0 ||
-                                                 shared_variables_.command_deltas.twist.angular.x != 0.0 ||
-                                                 shared_variables_.command_deltas.twist.angular.y != 0.0 ||
-                                                 shared_variables_.command_deltas.twist.angular.z != 0.0;
+  shared_variables_.zero_cartesian_cmd_flag = shared_variables_.command_deltas.twist.linear.x == 0.0 &&
+                                              shared_variables_.command_deltas.twist.linear.y == 0.0 &&
+                                              shared_variables_.command_deltas.twist.linear.z == 0.0 &&
+                                              shared_variables_.command_deltas.twist.angular.x == 0.0 &&
+                                              shared_variables_.command_deltas.twist.angular.y == 0.0 &&
+                                              shared_variables_.command_deltas.twist.angular.z == 0.0;
 
-  if (shared_variables_.have_nonzero_cartesian_cmd)
+  if (!shared_variables_.zero_cartesian_cmd_flag)
   {
     shared_variables_.latest_nonzero_cmd_stamp = velocity_command.header.stamp;
   }
-  shared_variables_.unlock();
+  shared_variables_mutex_.unlock();
 };
 
-void JogCppInterface::provideJointCommand(const control_msgs::JointJog& joint_command)
+void JogCppApi::provideJointCommand(const control_msgs::JointJog& joint_command)
 {
-  shared_variables_.lock();
+  shared_variables_mutex_.lock();
   shared_variables_.joint_command_deltas = joint_command;
 
   // Check if joint inputs is all zeros. Flag it if so to skip calculations/publication
@@ -194,39 +191,30 @@ void JogCppInterface::provideJointCommand(const control_msgs::JointJog& joint_co
   {
     all_zeros &= (delta == 0.0);
   };
-  shared_variables_.have_nonzero_joint_cmd = !all_zeros;
+  shared_variables_.zero_joint_cmd_flag = all_zeros;
 
-  if (shared_variables_.have_nonzero_joint_cmd)
+  if (!shared_variables_.zero_joint_cmd_flag)
   {
     shared_variables_.latest_nonzero_cmd_stamp = joint_command.header.stamp;
   }
-  shared_variables_.unlock();
+  shared_variables_mutex_.unlock();
 }
 
-sensor_msgs::JointState JogCppInterface::getJointState()
+sensor_msgs::JointState JogCppApi::getJointState()
 {
-  shared_variables_.lock();
+  shared_variables_mutex_.lock();
   sensor_msgs::JointState current_joints = shared_variables_.joints;
-  shared_variables_.unlock();
+  shared_variables_mutex_.unlock();
 
   return current_joints;
 }
 
-bool JogCppInterface::getCommandFrameTransform(Eigen::Isometry3d& transform)
+Eigen::Isometry3d JogCppApi::getCommandFrameTransform()
 {
-  if (!jog_calcs_ || !jog_calcs_->isInitialized())
-    return false;
+  shared_variables_mutex_.lock();
+  Eigen::Isometry3d tf_moveit_to_cmd_frame = shared_variables_.tf_moveit_to_cmd_frame;
+  shared_variables_mutex_.unlock();
 
-  shared_variables_.lock();
-  transform = shared_variables_.tf_moveit_to_cmd_frame;
-  shared_variables_.unlock();
-
-  // All zeros means the transform wasn't initialized, so return false
-  return !transform.matrix().isZero(0);
-}
-
-StatusCode JogCppInterface::getJoggerStatus()
-{
-  return shared_variables_.status;
+  return tf_moveit_to_cmd_frame;
 }
 }  // namespace moveit_jog_arm

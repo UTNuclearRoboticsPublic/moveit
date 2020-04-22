@@ -1,4 +1,9 @@
 /*******************************************************************************
+ *      Title     : jog_server.cpp
+ *      Project   : moveit_jog_arm
+ *      Created   : 12/31/2018
+ *      Author    : Andy Zelenak
+ *
  * BSD 3-Clause License
  *
  * Copyright (c) 2019, Los Alamos National Security, LLC
@@ -31,19 +36,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-/*      Title     : jog_server.cpp
- *      Project   : moveit_jog_arm
- *      Created   : 12/31/2018
- *      Author    : Andy Zelenak
- */
-
 #include <moveit_jog_arm/jog_ros_interface.h>
-
-static const std::string LOGNAME = "jog_server";
 
 int main(int argc, char** argv)
 {
-  ros::init(argc, argv, LOGNAME);
+  ros::init(argc, argv, moveit_jog_arm::LOGNAME);
 
   moveit_jog_arm::JogROSInterface ros_interface;
 
